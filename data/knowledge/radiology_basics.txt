@@ -1,0 +1,30 @@
+Radiological imaging modalities include X-ray, CT, MRI, and Ultrasound.
+
+X-ray:
+- Best for bones and chest pathology.
+- Radiolucent areas appear black (air), radiopaque areas white (bone).
+- Common findings: consolidation, pneumothorax, fractures, effusions.
+
+CT Scan:
+- Cross-sectional imaging with high spatial resolution.
+- Useful for trauma, lung, and brain evaluation.
+- Uses Hounsfield units to describe tissue density.
+
+MRI:
+- Superior for soft tissue contrast.
+- T1-weighted: fat is bright, water is dark.
+- T2-weighted: water and pathology appear bright.
+- Used for CNS, musculoskeletal, and liver lesions.
+
+Ultrasound:
+- Safe, real-time imaging using sound waves.
+- Anechoic (black) = fluid; hyperechoic (white) = dense tissue.
+- Doppler helps assess blood flow.
+
+Contrast Studies:
+- Use iodine (CT) or gadolinium (MRI) to enhance vascular and tissue visualization.
+- Always check renal function before contrast administration.
+
+Artifacts and Limitations:
+- Motion blur, metal implants, and operator dependency affect quality.
+- Correct positioning and exposure are essential for diagnosis accuracy.

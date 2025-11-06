@@ -1,0 +1,18 @@
+Psoriasis management follows a stepwise approach based on severity and body surface area.
+
+Mild psoriasis:
+- Topical corticosteroids, vitamin D analogs (calcipotriol).
+- Coal tar, salicylic acid, and emollients to reduce scaling.
+
+Moderate to severe psoriasis:
+- Phototherapy (narrowband UVB).
+- Systemic therapy: methotrexate, cyclosporine, acitretin.
+- Biologics: TNF-alpha inhibitors (etanercept), IL-17 inhibitors (secukinumab).
+
+Lifestyle:
+- Stress reduction, smoking cessation, healthy weight.
+- Avoid triggers such as infection, certain drugs (beta-blockers, lithium).
+
+Diagnosis considerations:
+- Differentiate from seborrheic dermatitis and eczema.
+- Histopathology helps confirm uncertain cases.

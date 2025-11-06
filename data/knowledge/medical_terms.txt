@@ -1,0 +1,11 @@
+Common medical imaging descriptors:
+- Hyperdense: high attenuation, appears white on CT.
+- Hypodense: low attenuation, appears dark on CT.
+- Hyperechoic: strong reflection on ultrasound, appears bright.
+- Hypoechoic: weak reflection, appears dark.
+- Homogeneous: uniform texture; heterogeneous: mixed texture.
+- Lesion: localized abnormal tissue area.
+- Margin: edge of a lesion; smooth, spiculated, or irregular.
+- Enhancement: increased brightness after contrast due to blood flow.
+
+Terminology is used consistently across radiology reports to describe structure and pathology accurately.

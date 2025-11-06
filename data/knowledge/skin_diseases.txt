@@ -1,0 +1,31 @@
+Skin diseases are broadly classified into inflammatory, infectious, and neoplastic conditions.
+
+Psoriasis:
+- Chronic immune-mediated disorder with sharply demarcated erythematous plaques and silvery scale.
+- Common sites: scalp, elbows, knees, lower back.
+- Auspitz sign: pinpoint bleeding when scales are scraped off.
+- Koebner phenomenon: lesions appear at sites of trauma.
+- Histology shows parakeratosis, elongation of rete ridges, Munro microabscesses.
+
+Eczema (Dermatitis):
+- Characterized by pruritus, erythema, vesiculation, and scaling.
+- Can be atopic, contact, seborrheic, or nummular.
+- Chronic forms show lichenification (thickened skin from scratching).
+
+Fungal Infections (Tinea):
+- Caused by dermatophytes such as Trichophyton and Microsporum.
+- Annular lesions with central clearing and active scaly borders.
+- Diagnosed with KOH mount or culture on Sabouraud agar.
+
+Seborrheic Dermatitis:
+- Greasy, yellow scales on scalp, nasolabial folds, eyebrows.
+- Associated with Malassezia yeast overgrowth.
+- Responds to antifungal shampoos and mild corticosteroids.
+
+Vitiligo:
+- Acquired depigmenting disorder due to loss of melanocytes.
+- Sharply defined white macules, often symmetric.
+- Common on face, hands, and genital areas.
+
+General note:
+Lesion morphology, distribution, and surface change are critical in differentiating these conditions.

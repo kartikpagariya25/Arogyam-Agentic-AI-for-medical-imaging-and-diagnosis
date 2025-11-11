@@ -1,10 +1,7 @@
-# main.py — AROGYAM (Final Stable Build)
-# Tabs: Diagnosis | Research Context | Downloads
-# Research Context tab shows Gemini’s section 7 or verified URLs for the diagnosed condition.
+# main.py — AROGYAM (Stable Release with CLIP Validation & Advisory Note)
 
-import os
-import io
-import re
+import os, io, re, requests
+from urllib.parse import urlparse
 from pathlib import Path
 import streamlit as st
 from PIL import Image as PILImage, ImageOps as PILImageOps
@@ -12,194 +9,173 @@ import numpy as np
 from dotenv import load_dotenv
 from fpdf import FPDF
 from gtts import gTTS
+from duckduckgo_search import DDGS
+import google.generativeai as genai
+from sentence_transformers import SentenceTransformer, util
 
-# Optional DICOM
+from prompt_config import PROMPT
+from report_prompt import REPORT_PROMPT
+from knowledge_base import search_kb
+
 try:
     import pydicom
 except Exception:
     pydicom = None
 
-import google.generativeai as genai
-from sentence_transformers import SentenceTransformer, util
-
-# Project imports
-from prompt_config import PROMPT
-from report_prompt import REPORT_PROMPT
-from knowledge_base import search_kb
-
-# -----------------------------
-# UI Configuration
-# -----------------------------
+# ---------------------------------------------------------
+# Streamlit Setup & Styling
+# ---------------------------------------------------------
 st.set_page_config(page_title="AROGYAM — Agentic AI for Medical Imaging and Diagnosis", layout="wide")
 
-# Dark Theme Styling
 st.markdown("""
 <style>
-body { background-color: #0E1117; color: #FAFAFA; }
-
-/* Sidebar */
+body { background-color:#0E1117; color:#FAFAFA; }
 section[data-testid="stSidebar"] {
-    background-color: #111827 !important;
-    color: #FAFAFA !important;
-    border-right: 1px solid #222;
+  background-color:#111827 !important; color:#FAFAFA !important;
+  border-right:1px solid #222;
 }
-.sidebar-title {
-    font-weight: 700;
-    font-size: 18px;
-    color: #E5E7EB;
-    margin-bottom: 0.75rem;
+.sidebar-title{font-weight:700;font-size:18px;color:#E5E7EB;margin-bottom:0.75rem;}
+label,span,p{color:#E5E7EB !important;}
+textarea,input,div[data-baseweb="input"]>div{
+  background-color:#1F2937 !important;color:#FAFAFA !important;
+  border:1px solid #374151 !important;border-radius:6px !important;
 }
-label, span, p {
-    color: #E5E7EB !important;
+div.stButton>button{
+  background-color:#2563EB !important;color:#fff !important;border:none !important;
+  border-radius:8px !important;font-weight:600 !important;height:2.6rem !important;width:100%;
 }
-textarea, input, div[data-baseweb="input"] > div {
-    background-color: #1F2937 !important;
-    color: #FAFAFA !important;
-    border: 1px solid #374151 !important;
-    border-radius: 6px !important;
-}
-
-/* Buttons */
-div.stButton > button {
-    background-color: #2563EB !important;
-    color: #FFFFFF !important;
-    border: none !important;
-    border-radius: 8px !important;
-    font-weight: 600 !important;
-    height: 2.6rem !important;
-    width: 100%;
-}
-div.stButton > button:hover {
-    background-color: #1E40AF !important;
-}
-
-/* Report container */
-.report-box {
-    background-color: #1F2937;
-    border-radius: 12px;
-    padding: 20px;
-    color: #E5E7EB;
-    border: 1px solid #374151;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.4);
-}
-
-/* Links */
-.link-item a {
-    color: #60A5FA !important;
-    text-decoration: none;
-}
-.link-item a:hover {
-    text-decoration: underline;
-}
-
-/* Tabs and headers */
-h1, h2, h3 {
-    color: #E5E7EB;
-}
+div.stButton>button:hover{background-color:#1E40AF !important;}
+.report-box{background-color:#1F2937;border-radius:12px;padding:20px;color:#E5E7EB;
+  border:1px solid #374151;box-shadow:0 2px 4px rgba(0,0,0,0.4);}
+h1,h2,h3{color:#E5E7EB;}
 </style>
 """, unsafe_allow_html=True)
 
-# -----------------------------
+# ---------------------------------------------------------
 # Constants
-# -----------------------------
+# ---------------------------------------------------------
 APP_TITLE = "🩺 AROGYAM — Agentic AI for Medical Imaging and Diagnosis"
 DISCLAIMER = (
-    "⚠️ This analysis is for educational and informational purposes only. "
-    "It is not a medical diagnosis or prescription. "
-    "Always consult a qualified healthcare professional for any medical concerns."
+    "⚠️ This report is for educational use only. It is not a medical prescription. "
+    "Consult certified healthcare professionals for diagnosis or treatment."
 )
 MODEL_NAME = "models/gemini-2.0-flash"
+CLIP_THRESHOLD = 0.30       # balanced threshold
+MAX_IMAGE_MB = 10
 
-# -----------------------------
+# ---------------------------------------------------------
 # Utility Functions
-# -----------------------------
+# ---------------------------------------------------------
 def _scrub_medication_doses(text: str) -> str:
     if not text:
         return text
-    pattern = re.compile(r"(\b\d+(\.\d+)?\s*(mg|mcg|g|gram|ml|mL|units|IU)\b[^.\n]*)", re.I)
-    return pattern.sub("[dose removed — clinician required]", text)
+    pat = re.compile(r"(\b\d+(\.\d+)?\s*(mg|mcg|g|gram|ml|mL|units|IU)\b[^.\n]*)", re.I)
+    return pat.sub("[dose removed — clinician required]", text)
 
-def _extract_research_context(text: str) -> str:
-    """Extract section ### 7. Research Context from Gemini output."""
-    match = re.search(r"###\s*7\.\s*Research Context[\s\S]*?(?=\n###|\Z)", text, re.I)
-    return match.group(0).strip() if match else ""
 
 def _extract_condition_name(text: str) -> str:
-    """Extract condition name from Diagnosis Summary line."""
-    match = re.search(r"(?i)diagnosis summary[:\-]?\s*([A-Za-z\s]+)", text)
-    return match.group(1).strip() if match else ""
+    if not text:
+        return ""
+    m = re.search(r"(?i)diagnosis summary[:\-]?\s*([A-Za-z][A-Za-z \-/]+)", text)
+    if m: return m.group(1).strip()
+    m = re.search(r"\b([A-Z][a-z]+(?:itis|osis|emia|opathy|oma|algia|dermatitis|psoriasis|asthma|pneumonia))\b", text)
+    return m.group(1).strip() if m else ""
 
-def _generate_condition_links(condition: str) -> list[str]:
-    """Generate verified reference URLs for the diagnosed condition."""
-    cond_q = condition.replace(" ", "+")
-    return [
-        f"• [WHO on {condition}](https://www.who.int/search?q={cond_q})",
-        f"• [NIH: {condition}](https://www.nih.gov/search?utf8=✓&affiliate=nih&query={cond_q})",
-        f"• [CDC Information on {condition}](https://www.cdc.gov/search/?query={cond_q})",
-        f"• [PubMed Articles on {condition}](https://pubmed.ncbi.nlm.nih.gov/?term={cond_q})",
-        f"• [Mayo Clinic – {condition}](https://www.mayoclinic.org/search/search-results?q={cond_q})",
-        f"• [Cleveland Clinic: {condition}](https://my.clevelandclinic.org/search?q={cond_q})",
-        f"• [MedlinePlus – {condition}](https://medlineplus.gov/search/?query={cond_q})",
-        f"• [WebMD – {condition}](https://www.webmd.com/search/search_results/default.aspx?query={cond_q})",
-        f"• [Healthline – {condition}](https://www.healthline.com/search?q1={cond_q})",
-        f"• [Johns Hopkins Medicine – {condition}](https://www.hopkinsmedicine.org/search/?q={cond_q})"
+
+@st.cache_data(ttl=86400)
+def _fetch_verified_references(disease_name: str, max_results: int = 10):
+    query = (
+        f'"{disease_name}" (research OR study OR article OR review OR clinical trial) '
+        f'site:who.int OR site:nih.gov OR site:pubmed.ncbi.nlm.nih.gov OR site:cdc.gov '
+        f'OR site:mayoclinic.org OR site:clevelandclinic.org OR site:nature.com '
+        f'OR site:springer.com OR site:thelancet.com OR site:nejm.org'
+    )
+    verified_domains = [
+        "who.int", "nih.gov", "pubmed.ncbi.nlm.nih.gov", "cdc.gov",
+        "mayoclinic.org", "clevelandclinic.org", "nature.com",
+        "springer.com", "thelancet.com", "nejm.org"
     ]
+    results = []
+    with DDGS() as ddgs:
+        for r in ddgs.text(query, max_results=max_results*3):
+            title = (r.get("title") or "").strip()
+            url = (r.get("href") or "").strip()
+            snippet = (r.get("body") or "").strip()
+            if not title or not url:
+                continue
+            domain = urlparse(url).netloc.replace("www.", "")
+            if not any(domain.endswith(v) for v in verified_domains):
+                continue
+            try:
+                resp = requests.get(url, timeout=5, stream=True)
+                if not (200 <= resp.status_code < 300):
+                    continue
+            except Exception:
+                continue
+            results.append(f"**[{title}]({url})**  \n_{snippet}_")
+            if len(results) >= max_results:
+                break
+    if not results:
+        fallback = {
+            "WHO": f"https://www.who.int/search?q={disease_name}",
+            "NIH": f"https://www.nih.gov/search?query={disease_name}",
+            "PubMed": f"https://pubmed.ncbi.nlm.nih.gov/?term={disease_name}",
+            "CDC": f"https://www.cdc.gov/search/?query={disease_name}",
+            "Mayo Clinic": f"https://www.mayoclinic.org/search/search-results?q={disease_name}",
+        }
+        results = [f"**[{n}]({u})**" for n,u in fallback.items()]
+    return results
+
 
 def _load_image_any(file: io.BytesIO, filename: str) -> PILImage.Image:
-    suffix = Path(filename).suffix.lower()
-    if suffix == ".dcm":
+    ext = Path(filename).suffix.lower()
+    if ext == ".dcm":
         if pydicom is None:
             raise RuntimeError("pydicom not installed.")
         ds = pydicom.dcmread(file)
         arr = ds.pixel_array.astype(np.float32)
-        arr = 255 * (arr - arr.min()) / (arr.ptp() or 1)
-        arr8 = arr.astype(np.uint8)
-        return PILImage.fromarray(arr8)
+        arr = 255*(arr-arr.min())/(arr.ptp() or 1)
+        return PILImage.fromarray(arr.astype(np.uint8))
     img = PILImage.open(file)
     img = PILImageOps.exif_transpose(img)
-    if img.mode not in ("RGB", "L"):
-        img = img.convert("RGB")
-    return img
+    return img.convert("RGB") if img.mode not in ("RGB","L") else img
+
 
 def _resize_for_display(img: PILImage.Image, max_side: int = 1024) -> PILImage.Image:
-    w, h = img.size
-    scale = min(max_side / max(w, h), 1.0)
-    if scale < 1.0:
-        img = img.resize((int(w * scale), int(h * scale)), resample=PILImage.LANCZOS)
-    return img
+    w,h = img.size
+    s = min(max_side/max(w,h),1.0)
+    return img.resize((int(w*s), int(h*s)), PILImage.LANCZOS) if s<1.0 else img
 
-def _image_bytes(img: PILImage.Image, fmt="JPEG", quality=90) -> bytes:
-    bio = io.BytesIO()
-    img.save(bio, format=fmt, quality=quality)
-    return bio.getvalue()
+
+def _image_bytes(img: PILImage.Image) -> bytes:
+    b = io.BytesIO()
+    img.save(b, format="JPEG", quality=90)
+    return b.getvalue()
+
 
 @st.cache_resource
 def _get_clip_model():
     return SentenceTransformer("clip-ViT-B-32")
 
-def _check_prompt_image_similarity(prompt_text: str, image: PILImage.Image) -> bool:
+
+def _check_prompt_image_similarity(prompt_text: str, image: PILImage.Image) -> float:
     model = _get_clip_model()
-    text_emb = model.encode([prompt_text], convert_to_tensor=True)
-    image_emb = model.encode([image], convert_to_tensor=True)
-    score = util.cos_sim(text_emb, image_emb).item()
-    return score >= 0.25
+    te = model.encode([prompt_text], convert_to_tensor=True, show_progress_bar=False)
+    ie = model.encode([image],           convert_to_tensor=True, show_progress_bar=False)
+    return float(util.cos_sim(te, ie).item())
+
 
 @st.cache_data(show_spinner=False)
 def _run_llm(system_prompt: str, context_text: str, inputs: list):
-    """Run Google Gemini model."""
     model = genai.GenerativeModel(model_name=MODEL_NAME, system_instruction=system_prompt)
-    result = model.generate_content(
-        contents=inputs,
-        safety_settings=None,
-        generation_config={"temperature": 0.25, "top_p": 0.9},
-    )
-    return result.text or ""
+    res = model.generate_content(contents=inputs, generation_config={"temperature":0.25,"top_p":0.9})
+    return res.text or ""
 
-# -----------------------------
-# App Setup
-# -----------------------------
+# ---------------------------------------------------------
+# Initialization
+# ---------------------------------------------------------
 load_dotenv()
-api_key = os.getenv("GOOGLE_API_KEY", "")
+api_key = os.getenv("GOOGLE_API_KEY","")
 if not api_key:
     st.error("GOOGLE_API_KEY not set.")
 else:
@@ -208,79 +184,94 @@ else:
 st.markdown(f"## {APP_TITLE}")
 st.caption(DISCLAIMER)
 
-# Sidebar
-st.sidebar.markdown("<p class='sidebar-title'>⚙️ Select Mode</p>", unsafe_allow_html=True)
-mode = st.sidebar.radio("", ["Medical Image Analysis", "Health Report Analysis"])
+# ---------------------------------------------------------
+# Sidebar UI
+# ---------------------------------------------------------
+st.sidebar.markdown("<p class='sidebar-title'>⚙️ Mode</p>", unsafe_allow_html=True)
+mode = st.sidebar.radio("", ["Medical Image Analysis","Health Report Analysis"])
+
+st.sidebar.markdown("<p class='sidebar-title'>⚠️ Important</p>", unsafe_allow_html=True)
+st.sidebar.info("If the uploaded image and your written prompt are not related, "
+                "the system may produce a **false or misleading diagnosis**.")
+
 st.sidebar.markdown("<p class='sidebar-title'>🧠 Your Prompt</p>", unsafe_allow_html=True)
-user_prompt = st.sidebar.text_area("Describe your condition or question")
+user_prompt = st.sidebar.text_area("Describe your concern or question", height=90)
 
-if mode == "Medical Image Analysis":
-    uploaded = st.sidebar.file_uploader("📷 Upload Medical Image", type=["jpg","jpeg","png","bmp","webp","dcm"])
-    run_btn = st.sidebar.button("🔍 Analyze Image")
-else:
-    uploaded = st.sidebar.file_uploader("📄 Upload Health Report", type=["pdf","txt"])
-    run_btn = st.sidebar.button("🔍 Analyze Report")
+st.sidebar.markdown("<p class='sidebar-title'>➕ Additional Symptoms</p>", unsafe_allow_html=True)
+extra_symptoms = st.sidebar.text_area(
+    "Optional. Used for reasoning only (ignored for CLIP validation).",
+    height=80,
+    placeholder="e.g., mild fever, rashes on lower back..."
+)
 
-# Tabs
-tab_diag, tab_research, tab_downloads = st.tabs(["🩻 Diagnosis", "📚 Research Context", "⬇️ Downloads"])
+with st.sidebar.expander("⚙️ Advanced"):
+    if st.button("Clear cached references"):
+        _fetch_verified_references.clear()
+        st.success("Cleared cached research links.")
 
-# Session vars
+uploaded = st.sidebar.file_uploader(
+    "📁 Upload File", type=["jpg","jpeg","png","bmp","webp","dcm","pdf","txt"]
+)
+run_btn = st.sidebar.button("🔍 Analyze")
+
+tab_diag, tab_research, tab_down = st.tabs(["🩻 Diagnosis","📚 Research Context","⬇️ Downloads"])
+
 if "safe_text" not in st.session_state:
     st.session_state.safe_text = ""
 if "img_disp" not in st.session_state:
     st.session_state.img_disp = None
-if "research_context_text" not in st.session_state:
-    st.session_state.research_context_text = ""
 
-# -----------------------------
-# Analysis Logic
-# -----------------------------
+# ---------------------------------------------------------
+# Analysis
+# ---------------------------------------------------------
 if run_btn:
-    if not api_key:
-        st.error("Missing GOOGLE_API_KEY.")
-        st.stop()
+    if not api_key: st.stop()
     if not user_prompt.strip():
-        st.error("Enter a valid prompt.")
-        st.stop()
+        st.error("Enter a valid prompt."); st.stop()
+    if uploaded is None:
+        st.error("Upload a valid file."); st.stop()
+    if uploaded.size > MAX_IMAGE_MB*1024*1024:
+        st.error(f"File exceeds {MAX_IMAGE_MB} MB limit."); st.stop()
 
     kb_refs = search_kb(user_prompt, top_k=3) or []
-    kb_context = "\n\n".join(kb_refs)
+    kb_text = "\n".join(kb_refs)
+    sym_text = f"\n\nAdditional Symptoms:\n{extra_symptoms.strip()}" if extra_symptoms.strip() else ""
+    context_text = f"User Prompt: {user_prompt}{sym_text}\n\n[INTERNAL_KB]\n{kb_text}\n[/INTERNAL_KB]"
 
-    context_text = f"User Prompt: {user_prompt}\n\n[INTERNAL_KB]\n{kb_context}\n[/INTERNAL_KB]"
-
-    if mode == "Medical Image Analysis":
-        if not uploaded:
-            st.error("Upload an image first.")
-            st.stop()
+    suffix = Path(uploaded.name).suffix.lower()
+    if suffix in [".jpg",".jpeg",".png",".bmp",".webp",".dcm"]:
         img = _load_image_any(io.BytesIO(uploaded.getvalue()), uploaded.name)
         img_disp = _resize_for_display(img)
+        with st.spinner("Validating image vs prompt..."):
+            clip_score = _check_prompt_image_similarity(user_prompt, img_disp)
+        st.caption(f"CLIP similarity: {clip_score:.3f} (required ≥ {CLIP_THRESHOLD})")
+        if clip_score < CLIP_THRESHOLD:
+            st.warning("Low CLIP match — image and prompt may be unrelated. "
+                       "Diagnosis could be inaccurate (educational use only).")
+        else:
+            st.success("Prompt–image alignment validated.")
         img_bytes = _image_bytes(img_disp)
-        inputs = [{"text": context_text}, {"inline_data": {"mime_type": "image/jpeg", "data": img_bytes}}]
+        inputs = [{"text":context_text},{"inline_data":{"mime_type":"image/jpeg","data":img_bytes}}]
         with st.spinner("Analyzing image..."):
             result_text = _run_llm(PROMPT, context_text, inputs)
         st.session_state.img_disp = img_disp
     else:
-        if not uploaded:
-            st.error("Upload a report first.")
-            st.stop()
-        suffix = Path(uploaded.name).suffix.lower()
         if suffix == ".pdf":
-            inputs = [{"text": context_text}, {"inline_data": {"mime_type": "application/pdf", "data": uploaded.getvalue()}}]
+            inputs = [{"text":context_text},{"inline_data":{"mime_type":"application/pdf","data":uploaded.getvalue()}}]
         else:
-            report_text = uploaded.read().decode("utf-8", errors="ignore")
-            context_text += "\n\nReport Text:\n" + report_text
-            inputs = [{"text": context_text}]
+            report_text = uploaded.read().decode("utf-8",errors="ignore")
+            context_text += "\n\nReport Text:\n"+report_text
+            inputs = [{"text":context_text}]
         with st.spinner("Analyzing report..."):
             result_text = _run_llm(REPORT_PROMPT, context_text, inputs)
 
     st.session_state.safe_text = _scrub_medication_doses(result_text)
-    st.session_state.research_context_text = _extract_research_context(result_text)
 
-# -----------------------------
-# Tabs Display
-# -----------------------------
+# ---------------------------------------------------------
+# Tabs
+# ---------------------------------------------------------
 with tab_diag:
-    if mode == "Medical Image Analysis" and st.session_state.img_disp:
+    if st.session_state.img_disp:
         st.image(st.session_state.img_disp, caption="Uploaded Image", use_container_width=True)
     if st.session_state.safe_text:
         st.markdown("### 🧾 Diagnostic Report")
@@ -288,57 +279,33 @@ with tab_diag:
         st.info(DISCLAIMER)
 
 with tab_research:
-    st.markdown("### 🌐 Research Context — Verified Medical References")
-
-    if st.session_state.get("research_context_text"):
-        st.markdown(st.session_state.research_context_text)
+    st.markdown("### 🌐 Research Context — Trusted Medical References & Research Papers")
+    cond = _extract_condition_name(st.session_state.safe_text)
+    if cond:
+        st.markdown(f"#### Curated sources for **{cond}**")
+        refs = _fetch_verified_references(cond, max_results=10)
+        for r in refs: st.markdown(r, unsafe_allow_html=True)
+        st.caption("Verified live research links (WHO, NIH, PubMed, Mayo, Cleveland Clinic, Nature, Springer, etc.).")
     else:
-        diagnosed_condition = _extract_condition_name(st.session_state.safe_text)
-        if diagnosed_condition:
-            st.markdown(f"#### Verified Web References for **{diagnosed_condition}**")
-            links = _generate_condition_links(diagnosed_condition)
-            for ref in links:
-                st.markdown(ref)
-            st.info(f"These sources provide authoritative, peer-reviewed information about {diagnosed_condition}.")
-        else:
-            st.markdown("#### Default Trusted Healthcare References")
-            default_refs = [
-                "• [World Health Organization (WHO)](https://www.who.int/)",
-                "• [National Institutes of Health (NIH)](https://www.nih.gov/)",
-                "• [Centers for Disease Control and Prevention (CDC)](https://www.cdc.gov/)",
-                "• [PubMed Biomedical Database](https://pubmed.ncbi.nlm.nih.gov/)",
-                "• [Mayo Clinic](https://www.mayoclinic.org/)",
-                "• [Cleveland Clinic](https://my.clevelandclinic.org/)",
-                "• [MedlinePlus](https://medlineplus.gov/)",
-                "• [WebMD](https://www.webmd.com/)",
-                "• [Healthline](https://www.healthline.com/)",
-                "• [Johns Hopkins Medicine](https://www.hopkinsmedicine.org/)"
-            ]
-            for ref in default_refs:
-                st.markdown(ref)
-            st.info("These verified organizations provide authoritative health information globally.")
+        st.info("Run an analysis to fetch verified references.")
 
-with tab_downloads:
+with tab_down:
     if st.session_state.safe_text:
         st.markdown("### 📂 Generate Outputs")
-        col1, col2 = st.columns(2)
-        with col1:
+        c1,c2 = st.columns(2)
+        with c1:
             if st.button("📄 Generate PDF Report"):
-                pdf = FPDF()
-                pdf.add_page()
-                pdf.set_font("Arial", size=12)
+                pdf = FPDF(); pdf.add_page(); pdf.set_font("Arial", size=12)
                 for line in st.session_state.safe_text.splitlines():
-                    pdf.multi_cell(0, 8, line if line.strip() else "")
-                pdf_path = "Arogyam_Report.pdf"
-                pdf.output(pdf_path)
-                with open(pdf_path, "rb") as f:
+                    pdf.multi_cell(0,8,line if line.strip() else "")
+                pdf.output("Arogyam_Report.pdf")
+                with open("Arogyam_Report.pdf","rb") as f:
                     st.download_button("⬇️ Download PDF", f, file_name="Arogyam_Report.pdf")
-        with col2:
+        with c2:
             if st.button("🔊 Generate Audio Summary"):
                 tts = gTTS(text=st.session_state.safe_text[:4000], lang="en")
-                audio_path = "Arogyam_Audio.mp3"
-                tts.save(audio_path)
-                with open(audio_path, "rb") as f:
+                tts.save("Arogyam_Audio.mp3")
+                with open("Arogyam_Audio.mp3","rb") as f:
                     st.download_button("⬇️ Download Audio", f, file_name="Arogyam_Audio.mp3")
     else:
         st.info("Run an analysis to enable downloads.")

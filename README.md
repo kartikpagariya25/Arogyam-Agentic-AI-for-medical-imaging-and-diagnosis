@@ -355,19 +355,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Requires internet connection for research fetching
 
 
-## 🗺️ Roadmap
-
-- [ ] Multi-language support
-- [ ] Mobile application
-- [ ] Integration with EHR systems
-- [ ] Advanced visualization tools
-- [ ] Batch processing capabilities
-- [ ] Real-time collaboration features
-- [ ] Enhanced security features (HIPAA compliance)
-- [ ] Offline mode support
-
----
-
 <div align="center">
 
 **Made with ❤️ for the medical community**
@@ -375,4 +362,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ⭐ Star this repo if you find it helpful!
 
 </div>
+
 

@@ -78,9 +78,9 @@ Use clear **Markdown formatting**.
 - Minimum 5 points.
 
 ### 6. Final Summary (MANDATORY)
-- Provide a concise concluding statement:
-  - If diagnosis confirmed: "**Diagnosis Summary:** <condition name>"
-  - If no findings: "**Diagnosis Summary:** No visible abnormality detected."
+- Begin summary with: **"Based on the collected user health details, the prediction is:"**
+- If diagnosis confirmed: **Diagnosis Summary:** <condition name>
+- If no findings: **Diagnosis Summary:** No visible abnormality detected.
 
 ### 7. Research Context
 - Cite 3–5 recent (last 5 years) peer-reviewed studies or reviews relevant to the findings.
